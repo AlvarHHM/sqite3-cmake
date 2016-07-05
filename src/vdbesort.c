@@ -1629,7 +1629,11 @@ SorterRecord *cdisc_sort(KeyInfo* keyInfo, SorterRecord *p, u32 which_field) {
 static int vdbeSorterSort(SortSubtask *pTask, SorterList *pList){
   SorterRecord *p;
   KeyInfo* keyInfo = pTask->pSorter->pKeyInfo;
+  int rc = vdbeSortAllocUnpacked(pTask);
+  if( rc!=SQLITE_OK ) return rc;
+
   p = pList->pList;
+  pTask->xCompare = vdbeSorterGetCompare(pTask->pSorter);
   while( p ){
     SorterRecord *pNext;
     if( pList->aMemory ){
