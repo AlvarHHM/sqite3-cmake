@@ -1394,62 +1394,260 @@ static SorterCompare vdbeSorterGetCompare(VdbeSorter *p){
   return vdbeSorterCompare;
 }
 
+#define ONE_BYTE_INT(x)    ((i8)(x)[0])
+#define TWO_BYTE_INT(x)    (256*(i8)((x)[0])|(x)[1])
+#define THREE_BYTE_INT(x)  (65536*(i8)((x)[0])|((x)[1]<<8)|(x)[2])
+#define FOUR_BYTE_UINT(x)  (((u32)(x)[0]<<24)|((x)[1]<<16)|((x)[2]<<8)|(x)[3])
+#define FOUR_BYTE_INT(x) (16777216*(i8)((x)[0])|((x)[1]<<16)|((x)[2]<<8)|(x)[3])
+
+static i64 vdbeRecordDecodeInt(u32 serial_type, const u8 *aKey) {
+  u32 y;
+  switch (serial_type) {
+    case 0:
+    case 1:
+      return ONE_BYTE_INT(aKey);
+    case 2:
+      return TWO_BYTE_INT(aKey);
+    case 3:
+      return THREE_BYTE_INT(aKey);
+    case 4: {
+      y = FOUR_BYTE_UINT(aKey);
+      return (i64) *(int *) &y;
+    }
+    case 5: {
+      return FOUR_BYTE_UINT(aKey + 2) + (((i64) 1) << 32) * TWO_BYTE_INT(aKey);
+    }
+    case 6: {
+      u64 x = FOUR_BYTE_UINT(aKey);
+      x = (x << 32) | FOUR_BYTE_UINT(aKey + 4);
+      return (i64) *(i64 *) &x;
+    }
+  }
+
+  return (serial_type - 8);
+}
+
+static u32 cal_data_offset(SorterRecord *p, u32 which_field) {
+  u8 *payload = SRVAL(p);
+  u32 offset = payload[0];
+  for (int i = 1; i < which_field; i++) {
+    if (payload[i] <= 4) {
+      offset += payload[i];
+    } else if (payload[i] == 5) {
+      offset += 6;
+    } else if (payload[i] == 6 | payload[i] == 7) {
+      offset += 8;
+    } else if (payload[i] >= 12 && payload[i] % 2) {
+      offset += (payload[i] - 13) / 2;
+    } else {
+      offset += (payload[i] - 12) / 2;
+    }
+  }
+  return offset;
+}
+
+static u64 shift_i64(i64 num) {
+  return num + (1ULL << 63);
+}
+
+static u64 map_float_u64(double f) {
+  u64 mask = -((*(u64 *) &f) >> 63) | 0x8000000000000000;
+  return (*(u64 *) &f) ^ mask;
+}
+
+SorterRecord *cdisc_sort(KeyInfo* keyInfo, SorterRecord *p, u32 which_field);
+
+static SorterRecord *gather_bucket(SorterRecord **bucket, int size, u8 order) {
+  SorterRecord *head = 0;
+  SorterRecord *last = 0;
+  for (int i = 0; i < size; i++) {
+    int idx = order ? (size - i - 1) : i;
+    if (bucket[idx]) {
+      SorterRecord *p = bucket[idx];
+      if (!head) {
+        head = p;
+      } else {
+        last->u.pNext = p;
+      }
+      last = p;
+      while (last->u.pNext) {
+        last = last->u.pNext;
+      }
+    }
+  }
+  return head;
+}
+
+static void insert_to_bucket(SorterRecord **bucket, u32 bucket_pos, SorterRecord *p) {
+  if ((bucket)[bucket_pos]) {
+    SorterRecord *last_in_bucket = (bucket)[bucket_pos];
+    while (last_in_bucket->u.pNext) {
+      last_in_bucket = last_in_bucket->u.pNext;
+    }
+    last_in_bucket->u.pNext = p;
+  } else {
+    (bucket)[bucket_pos] = p;
+  }
+  p->u.pNext = 0;
+}
+
+static SorterRecord *sort_real(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u32 which_int, u8 order) {
+  SorterRecord *bucket[65536];
+  for (int i = 0; i < 65536; i++) {
+    bucket[i] = 0;
+  }
+  while (p) {
+    SorterRecord *pNext = p->u.pNext;
+    u8 *payload = SRVAL(p);
+    u32 data_offset = cal_data_offset(p, which_field);
+    u8 *data = &payload[data_offset];
+    i64 i64_val = vdbeRecordDecodeInt(6, data);
+    double double_val = *(double *) &i64_val;
+    u64 u64_val = map_float_u64(double_val);
+    u16 bucket_pos = (u16) ((u64_val >> ((3 - which_int) * 16)) & 65535);
+    insert_to_bucket(bucket, bucket_pos, p);
+    p = pNext;
+  }
+
+  for (int i = 0; i < 65536; i++) {
+    if (bucket[i] && bucket[i]->u.pNext) {
+      if (which_int < 3) {
+        bucket[i] = sort_real(keyInfo, bucket[i], which_field, which_int + 1, order);
+      } else {
+        bucket[i] = cdisc_sort(keyInfo, bucket[i], (which_field + 1));
+      }
+    }
+  }
+
+  return gather_bucket(bucket, 65536, order);
+}
+
+static SorterRecord *sort_int(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u32 which_int, u8 order) {
+
+  SorterRecord *bucket[65536];
+  for (int i = 0; i < 65536; i++) {
+    bucket[i] = 0;
+  }
+  while (p) {
+    u32 serial_type = (u32) ((u8 *) SRVAL(p))[which_field];
+    SorterRecord *pNext = p->u.pNext;
+    u8 *payload = SRVAL(p);
+    u32 data_offset = cal_data_offset(p, which_field);
+    u8 *data = &payload[data_offset];
+    i64 int_val = vdbeRecordDecodeInt(serial_type, data);
+    u64 shifted_val = shift_i64(int_val);
+    u16 bucket_pos = (u16) ((shifted_val >> ((3 - which_int) * 16)) & 65535);
+    insert_to_bucket(bucket, bucket_pos, p);
+    p->u.pNext = 0;
+    p = pNext;
+  }
+
+  for (int i = 0; i < 65536; i++) {
+    if (bucket[i] && bucket[i]->u.pNext) {
+      if (which_int < 3) {
+        bucket[i] = sort_int(keyInfo, bucket[i], which_field, which_int + 1, order);
+      } else {
+        bucket[i] = cdisc_sort(keyInfo, bucket[i], (which_field + 1));
+      }
+    }
+  }
+
+  return gather_bucket(bucket, 65536, order);
+}
+
+static u8 empty_except_zero(SorterRecord **bucket) {
+  for (int i = 1; i < 256; i++) {
+    if (bucket[i]) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static SorterRecord *sort_text(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u32 which_byte, u8 order) {
+
+  SorterRecord *bucket[256];
+  for (int i = 0; i < 256; i++) {
+    bucket[i] = 0;
+  }
+
+  while (p) {
+    u32 serial_type = (u32) ((u8 *) SRVAL(p))[which_field];
+    SorterRecord *pNext = p->u.pNext;
+    u8 *payload = SRVAL(p);
+    u32 data_offset = cal_data_offset(p, which_field);
+    u8 *data = &payload[data_offset];
+    u32 bucket_pos = data[which_byte];
+    if (which_byte > ((serial_type - 13) / 2) - 1) {
+      insert_to_bucket(bucket, 0, p);
+    } else {
+      insert_to_bucket(bucket, bucket_pos, p);
+    }
+    p = pNext;
+  }
+
+  for (int i = 0; i < 256; i++) {
+    if (bucket[i] && bucket[i]->u.pNext) {
+      if (!empty_except_zero(bucket)) {
+        bucket[i] = sort_text(keyInfo, bucket[i], which_field, which_byte + 1, order);
+      } else {
+        bucket[i] = cdisc_sort(keyInfo, bucket[i], (which_field + 1));
+      }
+    }
+  }
+
+  return gather_bucket(bucket, 256, order);
+
+}
+
+SorterRecord *cdisc_sort(KeyInfo* keyInfo, SorterRecord *p, u32 which_field) {
+  if (which_field > keyInfo->nField){
+    return p;
+  }
+  u8 order = keyInfo->aSortOrder[which_field-1];
+  u32 serial_type = (u32) ((u8 *) SRVAL(p))[which_field];
+  if (serial_type < 7) {
+    p = sort_int(keyInfo, p, which_field, 0, order);
+  } else if (serial_type == 7) {
+    p = sort_real(keyInfo, p, which_field, 0, order);
+  } else if (((serial_type % 2) != 0)) {
+    p = sort_text(keyInfo,  p, which_field, 0, order);
+  } else {
+
+  }
+  return p;
+
+}
+
 /*
 ** Sort the linked list of records headed at pTask->pList. Return 
 ** SQLITE_OK if successful, or an SQLite error code (i.e. SQLITE_NOMEM) if 
 ** an error occurs.
 */
+
+
 static int vdbeSorterSort(SortSubtask *pTask, SorterList *pList){
-  int i;
-  SorterRecord **aSlot;
   SorterRecord *p;
-  int rc;
-
-  rc = vdbeSortAllocUnpacked(pTask);
-  if( rc!=SQLITE_OK ) return rc;
-
+  KeyInfo* keyInfo = pTask->pSorter->pKeyInfo;
   p = pList->pList;
-  pTask->xCompare = vdbeSorterGetCompare(pTask->pSorter);
-
-  aSlot = (SorterRecord **)sqlite3MallocZero(64 * sizeof(SorterRecord *));
-  if( !aSlot ){
-    return SQLITE_NOMEM_BKPT;
-  }
-
   while( p ){
     SorterRecord *pNext;
     if( pList->aMemory ){
       if( (u8*)p==pList->aMemory ){
         pNext = 0;
       }else{
-        assert( p->u.iNext<sqlite3MallocSize(pList->aMemory) );
         pNext = (SorterRecord*)&pList->aMemory[p->u.iNext];
       }
     }else{
       pNext = p->u.pNext;
     }
-
-    p->u.pNext = 0;
-    for(i=0; aSlot[i]; i++){
-      p = vdbeSorterMerge(pTask, p, aSlot[i]);
-      aSlot[i] = 0;
-    }
-    aSlot[i] = p;
+    p->u.pNext = pNext;
     p = pNext;
   }
 
-  p = 0;
-  for(i=0; i<64; i++){
-    if( aSlot[i]==0 ) continue;
-    p = p ? vdbeSorterMerge(pTask, p, aSlot[i]) : aSlot[i];
-  }
-  pList->pList = p;
-
-  sqlite3_free(aSlot);
-  assert( pTask->pUnpacked->errCode==SQLITE_OK
-          || pTask->pUnpacked->errCode==SQLITE_NOMEM
-  );
-  return pTask->pUnpacked->errCode;
+  p = pList->pList;
+  pList->pList = cdisc_sort(keyInfo, p, 1);
+  return SQLITE_OK;
 }
 
 /*
