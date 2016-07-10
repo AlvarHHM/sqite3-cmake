@@ -2020,7 +2020,8 @@ int sqlite3VdbeSorterWrite(
               || (pSorter->list.szPMA > pSorter->mnPmaSize && sqlite3HeapNearlyFull())
       );
     }
-    if( bFlush ){
+    // mahoihei, modified to prevent flushing to disc.
+    if( 0 ){
       rc = vdbeSorterFlushPMA(pSorter);
       pSorter->list.szPMA = 0;
       pSorter->iMemory = 0;
