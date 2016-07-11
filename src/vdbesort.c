@@ -1427,6 +1427,11 @@ static i64 vdbeRecordDecodeInt(u32 serial_type, const u8 *aKey) {
   return (serial_type - 8);
 }
 
+typedef struct bucket_entry{
+    SorterRecord* head;
+    SorterRecord* last;
+} bucket_entry;
+
 static u32 cal_data_offset(SorterRecord *p, u32 which_field) {
   u8 *payload = SRVAL(p);
   u32 offset = payload[0];
@@ -1446,6 +1451,13 @@ static u32 cal_data_offset(SorterRecord *p, u32 which_field) {
   return offset;
 }
 
+SorterRecord* get_tail(SorterRecord* p){
+  while(p->u.pNext){
+    p = p->u.pNext;
+  }
+  return p;
+}
+
 static u64 shift_i64(i64 num) {
   return num + (1ULL << 63);
 }
@@ -1457,44 +1469,39 @@ static u64 map_float_u64(double f) {
 
 SorterRecord *cdisc_sort(KeyInfo* keyInfo, SorterRecord *p, u32 which_field);
 
-static SorterRecord *gather_bucket(SorterRecord **bucket, int size, u8 order) {
+SorterRecord *gather_bucket(bucket_entry *bucket, int size, u8 order) {
   SorterRecord *head = 0;
   SorterRecord *last = 0;
   for (int i = 0; i < size; i++) {
-    int idx = order ? (size - i - 1) : i;
-    if (bucket[idx]) {
-      SorterRecord *p = bucket[idx];
+    int idx = order? (size - i - 1): i;
+    if (bucket[idx].head) {
+      SorterRecord *p = bucket[idx].head;
       if (!head) {
         head = p;
-      } else {
+      }else{
         last->u.pNext = p;
       }
-      last = p;
-      while (last->u.pNext) {
-        last = last->u.pNext;
-      }
+      last = bucket[idx].last;
     }
   }
   return head;
 }
 
-static void insert_to_bucket(SorterRecord **bucket, u32 bucket_pos, SorterRecord *p) {
-  if ((bucket)[bucket_pos]) {
-    SorterRecord *last_in_bucket = (bucket)[bucket_pos];
-    while (last_in_bucket->u.pNext) {
-      last_in_bucket = last_in_bucket->u.pNext;
-    }
-    last_in_bucket->u.pNext = p;
+void insert_to_bucket(bucket_entry* bucket, u32 bucket_pos, SorterRecord* p){
+  if (bucket[bucket_pos].head) {
+    bucket[bucket_pos].last->u.pNext = p;
   } else {
-    (bucket)[bucket_pos] = p;
+    bucket[bucket_pos].head = p;
   }
+  bucket[bucket_pos].last = p;
   p->u.pNext = 0;
 }
 
 static SorterRecord *sort_real(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u32 which_int, u8 order) {
-  SorterRecord *bucket[65536];
+  bucket_entry bucket[65536];
   for (int i = 0; i < 65536; i++) {
-    bucket[i] = 0;
+    bucket[i].head = 0;
+    bucket[i].last = 0;
   }
   while (p) {
     SorterRecord *pNext = p->u.pNext;
@@ -1510,11 +1517,13 @@ static SorterRecord *sort_real(KeyInfo* keyInfo, SorterRecord *p, u32 which_fiel
   }
 
   for (int i = 0; i < 65536; i++) {
-    if (bucket[i] && bucket[i]->u.pNext) {
+    if (bucket[i].head != bucket[i].last) {
       if (which_int < 3) {
-        bucket[i] = sort_real(keyInfo, bucket[i], which_field, which_int + 1, order);
+        bucket[i].head = sort_real(keyInfo, bucket[i].head, which_field, which_int + 1, order);
+        bucket[i].last = get_tail(bucket[i].head);
       } else {
-        bucket[i] = cdisc_sort(keyInfo, bucket[i], (which_field + 1));
+        bucket[i].head = cdisc_sort(keyInfo, bucket[i].head, (which_field + 1));
+        bucket[i].last = get_tail(bucket[i].head);
       }
     }
   }
@@ -1523,10 +1532,10 @@ static SorterRecord *sort_real(KeyInfo* keyInfo, SorterRecord *p, u32 which_fiel
 }
 
 static SorterRecord *sort_int(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u32 which_int, u8 order) {
-
-  SorterRecord *bucket[65536];
+  bucket_entry bucket[65536];
   for (int i = 0; i < 65536; i++) {
-    bucket[i] = 0;
+    bucket[i].head = 0;
+    bucket[i].last = 0;
   }
   while (p) {
     u32 serial_type = (u32) ((u8 *) SRVAL(p))[which_field];
@@ -1537,17 +1546,19 @@ static SorterRecord *sort_int(KeyInfo* keyInfo, SorterRecord *p, u32 which_field
     i64 int_val = vdbeRecordDecodeInt(serial_type, data);
     u64 shifted_val = shift_i64(int_val);
     u16 bucket_pos = (u16) ((shifted_val >> ((3 - which_int) * 16)) & 65535);
-    insert_to_bucket(bucket, bucket_pos, p);
+    insert_to_bucket(bucket, bucket_pos,p);
     p->u.pNext = 0;
     p = pNext;
   }
 
   for (int i = 0; i < 65536; i++) {
-    if (bucket[i] && bucket[i]->u.pNext) {
+    if (bucket[i].head != bucket[i].last) {
       if (which_int < 3) {
-        bucket[i] = sort_int(keyInfo, bucket[i], which_field, which_int + 1, order);
+        bucket[i].head = sort_int(keyInfo, bucket[i].head, which_field, which_int + 1, order);
+        bucket[i].last = get_tail(bucket[i].head);
       } else {
-        bucket[i] = cdisc_sort(keyInfo, bucket[i], (which_field + 1));
+        bucket[i].head = cdisc_sort(keyInfo, bucket[i].head, (which_field + 1));
+        bucket[i].last = get_tail(bucket[i].head);
       }
     }
   }
@@ -1555,9 +1566,9 @@ static SorterRecord *sort_int(KeyInfo* keyInfo, SorterRecord *p, u32 which_field
   return gather_bucket(bucket, 65536, order);
 }
 
-static u8 empty_except_zero(SorterRecord **bucket) {
-  for (int i = 1; i < 256; i++) {
-    if (bucket[i]) {
+u8 empty_except_zero(bucket_entry* bucket){
+  for(int i = 1; i < 256; i++){
+    if (bucket[i].head){
       return 0;
     }
   }
@@ -1565,10 +1576,10 @@ static u8 empty_except_zero(SorterRecord **bucket) {
 }
 
 static SorterRecord *sort_text(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u32 which_byte, u8 order) {
-
-  SorterRecord *bucket[256];
+  bucket_entry bucket[256];
   for (int i = 0; i < 256; i++) {
-    bucket[i] = 0;
+    bucket[i].head = 0;
+    bucket[i].last = 0;
   }
 
   while (p) {
@@ -1578,20 +1589,22 @@ static SorterRecord *sort_text(KeyInfo* keyInfo, SorterRecord *p, u32 which_fiel
     u32 data_offset = cal_data_offset(p, which_field);
     u8 *data = &payload[data_offset];
     u32 bucket_pos = data[which_byte];
-    if (which_byte > ((serial_type - 13) / 2) - 1) {
+    if (which_byte > ((serial_type - 13) / 2) - 1){
       insert_to_bucket(bucket, 0, p);
-    } else {
+    }else{
       insert_to_bucket(bucket, bucket_pos, p);
     }
     p = pNext;
   }
 
   for (int i = 0; i < 256; i++) {
-    if (bucket[i] && bucket[i]->u.pNext) {
+    if (bucket[i].head != bucket[i].last) {
       if (!empty_except_zero(bucket)) {
-        bucket[i] = sort_text(keyInfo, bucket[i], which_field, which_byte + 1, order);
+        bucket[i].head = sort_text(keyInfo, bucket[i].head, which_field, which_byte + 1, order);
+        bucket[i].last = get_tail(bucket[i].head);
       } else {
-        bucket[i] = cdisc_sort(keyInfo, bucket[i], (which_field + 1));
+        bucket[i].head = cdisc_sort(keyInfo, bucket[i].head, (which_field + 1));
+        bucket[i].last = get_tail(bucket[i].head);
       }
     }
   }
