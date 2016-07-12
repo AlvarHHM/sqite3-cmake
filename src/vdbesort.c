@@ -1418,16 +1418,16 @@ static int vdbeSorterSort(SortSubtask *pTask, SorterList *pList){
 
   static int idx = 1;
   while( p ){
-    char* payload = SRVAL(p);
-    printf("u8 data%d[%d] = \"",idx,p->nVal+1);
-    for (int j = 0; j < p->nVal; j++) {
-      printf("\\x%02x", (unsigned char) payload[j]);
-    }
-    printf("\";\n");
-    printf("SorterRecord *item%d = malloc(sizeof(SorterRecord) + %d);\n", idx, p->nVal);
-    printf("item%d->nVal = %d;\n",idx, p->nVal);
-    printf("memcpy(SRVAL(item%d), data%d, %d);\n",idx,idx ,p->nVal);
-    idx++;
+//    char* payload = SRVAL(p);
+//    printf("u8 data%d[%d] = \"",idx,p->nVal+1);
+//    for (int j = 0; j < p->nVal; j++) {
+//      printf("\\x%02x", (unsigned char) payload[j]);
+//    }
+//    printf("\";\n");
+//    printf("SorterRecord *item%d = malloc(sizeof(SorterRecord) + %d);\n", idx, p->nVal);
+//    printf("item%d->nVal = %d;\n",idx, p->nVal);
+//    printf("memcpy(SRVAL(item%d), data%d, %d);\n",idx,idx ,p->nVal);
+//    idx++;
     SorterRecord *pNext;
     if( pList->aMemory ){
       if( (u8*)p==pList->aMemory ){
