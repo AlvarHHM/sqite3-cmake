@@ -1596,10 +1596,10 @@ bucket_entry sort_text(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u32 w
     u32 data_offset = cal_data_offset(p, which_field);
     u8 *data = &payload[data_offset];
     u32 bucket_pos = data[which_byte];
-    if (which_byte > ((serial_type - 13) / 2) - 1){
-      insert_to_bucket(bucket, 0, p);
-    }else{
+    if (which_byte < ((serial_type - 13) / 2)){
       insert_to_bucket(bucket, bucket_pos, p);
+    }else{
+      insert_to_bucket(bucket, 0, p);
     }
     p = pNext;
   }
