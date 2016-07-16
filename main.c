@@ -36,6 +36,10 @@ int main(int argc, char *argv[]) {
     setbuf(stdout, NULL);
     sqlite3 *db;
     sqlite3_open_v2(":memory:", &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);
+    sqlite3_exec(db, "PRAGMA synchronous=OFF", NULL, NULL, NULL);
+    sqlite3_exec(db, "PRAGMA count_changes=OFF", NULL, NULL, NULL);
+    sqlite3_exec(db, "PRAGMA journal_mode=MEMORY", NULL, NULL, NULL);
+    sqlite3_exec(db, "PRAGMA temp_store=MEMORY", NULL, NULL, NULL);
     sqlite3_exec(db, "drop table if exists fun;", NULL, NULL, NULL);
     sqlite3_exec(db, "create table fun(id num, randstr text, randint num, randreal real);", NULL, NULL, NULL);
     srand(time(NULL));
