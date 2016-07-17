@@ -29,7 +29,7 @@ void measure_query_time(sqlite3* db, int i, char* field){
     sqlite3_exec(db, sql, 0, 0, 0);
     diff = clock() - start;
     long msec = diff * 1000 / CLOCKS_PER_SEC;
-    printf("%d %ld\n", i, msec / 1000, msec % 1000);
+    printf("%d\t%ld\n", i, msec / 1000, msec % 1000);
 }
 
 int main(int argc, char *argv[]) {
@@ -40,6 +40,8 @@ int main(int argc, char *argv[]) {
     sqlite3_exec(db, "PRAGMA count_changes=OFF", NULL, NULL, NULL);
     sqlite3_exec(db, "PRAGMA journal_mode=MEMORY", NULL, NULL, NULL);
     sqlite3_exec(db, "PRAGMA temp_store=MEMORY", NULL, NULL, NULL);
+    sqlite3_exec(db, "PRAGMA automatic_index=false", NULL, NULL, NULL);
+
     sqlite3_exec(db, "drop table if exists fun;", NULL, NULL, NULL);
     sqlite3_exec(db, "create table fun(id num, randstr text, randint num, randreal real);", NULL, NULL, NULL);
     srand(time(NULL));
