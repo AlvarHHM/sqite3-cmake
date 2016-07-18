@@ -1499,9 +1499,9 @@ void insert_to_bucket(bucket_entry* bucket, u32 bucket_pos, SorterRecord* p){
 }
 
 bucket_entry sort_numeric(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u8 order){
-  for (int radix = 0; radix < 4; radix++){
-    bucket_entry bucket[65536];
-    for (int i = 0; i < 65536; i++) {
+  for (int radix = 0; radix < 2; radix++){
+    bucket_entry bucket[256];
+    for (u64 i = 0; i < 256; i++) {
       bucket[i].head = 0;
       bucket[i].last = 0;
     }
@@ -1515,18 +1515,18 @@ bucket_entry sort_numeric(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u8
       if (serial_type <= 6){
         i64 int_val = vdbeRecordDecodeInt(serial_type, data);
         u64 shifted_val = shift_i64(int_val);
-        bucket_pos = (u16) ((shifted_val >> (radix * 16)) & 65535);
+        bucket_pos = (u16) ((shifted_val >> (radix * 8)) & 255);
       }else{
         i64 i64_val = vdbeRecordDecodeInt(6, data);
         double double_val = *(double *) &i64_val;
         u64 u64_val = map_float_u64(double_val);
-        bucket_pos = (u16) ((u64_val >> (radix * 16)) & 65535);
+        bucket_pos = (u16) ((u64_val >> (radix * 8)) & 255);
       }
       insert_to_bucket(bucket, bucket_pos, p);
       p->u.pNext = 0;
       p = pNext;
     }
-    p = gather_bucket(bucket, 65536, order).head;
+    p = gather_bucket(bucket, 256, order).head;
   }
   return cdisc_sort(keyInfo, p, which_field + 1);
 }
