@@ -3704,7 +3704,7 @@ static int wherePathSolver(WhereInfo *pWInfo, LogEst nRowEst){
         LogEst rCost;                     /* Cost of path (pFrom+pWLoop) */
         LogEst rUnsorted;                 /* Unsorted cost of (pFrom+pWLoop) */
         i8 isOrdered = pFrom->isOrdered;  /* isOrdered for (pFrom+pWLoop) */
-        Bitmask maskNew;                  /* Mask of src visited by (..) */
+        Bitmask maskNew;                  /* Mask of sqlite3_src visited by (..) */
         Bitmask revMask = 0;              /* Mask of rev-order loops for (..) */
 
         if( (pWLoop->prereq & ~pFrom->maskLoop)!=0 ) continue;

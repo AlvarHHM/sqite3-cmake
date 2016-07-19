@@ -373,7 +373,7 @@ int sqlite3_backup_step(sqlite3_backup *p, int nPage){
     Pager * const pDestPager = sqlite3BtreePager(p->pDest);   /* Dest pager */
     int ii;                            /* Iterator variable */
     int nSrcPage = -1;                 /* Size of source db in pages */
-    int bCloseTrans = 0;               /* True if src db requires unlocking */
+    int bCloseTrans = 0;               /* True if sqlite3_src db requires unlocking */
 
     /* If the source pager is currently in a write-transaction, return
     ** SQLITE_BUSY immediately.

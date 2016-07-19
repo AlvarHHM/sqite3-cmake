@@ -235,7 +235,7 @@ struct RbuObjIter {
   int nTblCol;                    /* Size of azTblCol[] array */
   char **azTblCol;                /* Array of unquoted target column names */
   char **azTblType;               /* Array of target column types */
-  int *aiSrcOrder;                /* src table col -> target table col */
+  int *aiSrcOrder;                /* msrc table col -> target table col */
   u8 *abTblPk;                    /* Array of flags, set on target PK columns */
   u8 *abNotNull;                  /* Array of flags, set on NOT NULL columns */
   u8 *abIndexed;                  /* Array of flags, set on indexed & PK cols */
