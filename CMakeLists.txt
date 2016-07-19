@@ -8,7 +8,6 @@ list(REMOVE_ITEM TSRC ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3_src/shell.c)
 #_TCC += -DNDEBUG
 #add_definitions(-DNDEBUG)
 #add_definitions(-DSQLITE_DEBUG)
-message("abc")
 if(UNIX)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -lrt -pthread -ldl")
     message("lsadjflaksdjf")
