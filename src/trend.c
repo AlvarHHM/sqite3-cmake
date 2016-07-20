@@ -29,7 +29,8 @@ void measure_query_time(sqlite3* db, char* field){
 //    double start = getCPUTime(), diff;
     char sql[50];
     sprintf(sql, "select * from fun order by %s", "randint");
-    sqlite3_exec(db, sql, 0, 0, 0);
+    char* err;
+    sqlite3_exec(db, sql, 0, 0, &err);
 //    diff = getCPUTime() - start;
 //    printf("%d\t\t%lf\n", 0, diff);
 }
@@ -48,7 +49,7 @@ int main(int argc, char *argv[]) {
     sqlite3_exec(db, "create table fun(id num, randstr text, randint num, randreal real);", NULL, NULL, NULL);
     srand(time(NULL));
     sqlite3_exec(db, "BEGIN TRANSACTION;", NULL, NULL, NULL);
-    for (int i = 1; i==atoi(argv[1]); i++) {
+    for (int i = 1; i<atoi(argv[1]); i++) {
 
         long long int randint = ((long long) rand() << 32) | rand();
         randint = (rand() % 2)? randint: -randint;
