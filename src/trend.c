@@ -48,6 +48,9 @@ int main(int argc, char *argv[]) {
     sqlite3_exec(db, "drop table if exists fun;", NULL, NULL, NULL);
     sqlite3_exec(db, "create table fun(id num, randstr text, randint num, randreal real);", NULL, NULL, NULL);
     srand(time(NULL));
+    char sql[] = "insert into fun values(?1,?2,?3,?4)";
+    sqlite3_stmt* stmt;
+    sqlite3_prepare_v2(db, sql, strlen(sql), &stmt, NULL);
     sqlite3_exec(db, "BEGIN TRANSACTION;", NULL, NULL, NULL);
     for (int i = 1; i<atoi(argv[1]); i++) {
 
@@ -57,10 +60,12 @@ int main(int argc, char *argv[]) {
         int len = randr(1, 11);
         char randstr[len];
         rand_str(randstr, len);
-        char buffer[300];
-        sprintf(buffer, "insert into fun values(%d,'%s',%lld,%lf)",
-                i, randstr, randint, randreal);
-        sqlite3_exec(db, buffer, NULL, NULL, NULL);
+        sqlite3_bind_int(stmt, 1, i);
+        sqlite3_bind_text(stmt, 2, randstr, len, SQLITE_STATIC);
+        sqlite3_bind_int64(stmt, 3, randint);
+        sqlite3_bind_double(stmt, 4, randreal);
+        sqlite3_step(stmt);
+        sqlite3_reset(stmt);
 //        if (i % atoi(argv[1]) == 0){
 //            sqlite3_exec(db, "COMMIT TRANSACTION", NULL, NULL, NULL);
 //            sqlite3_exec(db, "BEGIN TRANSACTION;", NULL, NULL, NULL);
