@@ -26,13 +26,13 @@ void rand_str(char *dest, size_t length) {
 }
 
 void measure_query_time(sqlite3* db, char* field){
-//    double start = getCPUTime(), diff;
+    double start = getCPUTime(), diff;
     char sql[50];
     sprintf(sql, "select * from fun order by %s", "randint");
     char* err;
     sqlite3_exec(db, sql, 0, 0, &err);
-//    diff = getCPUTime() - start;
-//    printf("%d\t\t%lf\n", 0, diff);
+    diff = getCPUTime() - start;
+    printf("%d\t\t%lf\n", 0, diff);
 }
 
 int main(int argc, char *argv[]) {
