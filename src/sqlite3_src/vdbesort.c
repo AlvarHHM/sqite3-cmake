@@ -1499,7 +1499,7 @@ void insert_to_bucket(bucket_entry* bucket, u32 bucket_pos, SorterRecord* p){
 }
 
 bucket_entry sort_numeric(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u8 order){
-  for (int radix = 0; radix < 2; radix++){
+  for (int radix = 0; radix < 8; radix++){
     bucket_entry bucket[256];
     for (u64 i = 0; i < 256; i++) {
       bucket[i].head = 0;
