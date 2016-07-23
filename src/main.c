@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
     sqlite3_exec(db, "PRAGMA synchronous=OFF", NULL, NULL, NULL);
     sqlite3_exec(db, "PRAGMA count_changes=OFF", NULL, NULL, NULL);
     sqlite3_exec(db, "PRAGMA journal_mode=MEMORY", NULL, NULL, NULL);
-//    sqlite3_exec(db, "PRAGMA temp_store=MEMORY", NULL, NULL, NULL);
+    sqlite3_exec(db, "PRAGMA temp_store=MEMORY", NULL, NULL, NULL);
     sqlite3_exec(db, "PRAGMA automatic_index=false", NULL, NULL, NULL);
 
     sqlite3_exec(db, "drop table if exists fun;", NULL, NULL, NULL);
