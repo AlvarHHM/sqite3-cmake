@@ -51,7 +51,7 @@ int main(int argc, char *argv[]) {
     sqlite3_stmt* stmt;
     sqlite3_prepare_v2(db, sql, strlen(sql), &stmt, NULL);
     sqlite3_exec(db, "BEGIN TRANSACTION;", NULL, NULL, NULL);
-    for (int i = 1; i < 300000000; i++) {
+    for (int i = 1; i < 2000000000; i++) {
 
         long long int randint = ((long long) rand() << 32) | rand();
         randint = (rand() % 2)? randint: -randint;
@@ -64,10 +64,12 @@ int main(int argc, char *argv[]) {
         sqlite3_bind_int64(stmt, 3, randint);
         sqlite3_bind_double(stmt, 4, randreal);
         sqlite3_step(stmt);
-        if (i % atoi(argv[1]) == 0){
-            sqlite3_exec(db, "COMMIT TRANSACTION", NULL, NULL, NULL);
-            measure_query_time(db, i, argv[2]);
-            sqlite3_exec(db, "BEGIN TRANSACTION;", NULL, NULL, NULL);
+        if (argc < 4 || i > atoi(argv[3])){
+            if (i % atoi(argv[1]) == 0){
+                sqlite3_exec(db, "COMMIT TRANSACTION", NULL, NULL, NULL);
+                measure_query_time(db, i, argv[2]);
+                sqlite3_exec(db, "BEGIN TRANSACTION;", NULL, NULL, NULL);
+            }
         }
         sqlite3_reset(stmt);
 
