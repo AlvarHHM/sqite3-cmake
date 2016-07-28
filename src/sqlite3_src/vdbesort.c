@@ -1498,44 +1498,7 @@ void insert_to_bucket(bucket_entry* bucket, u32 bucket_pos, SorterRecord* p){
   p->u.pNext = 0;
 }
 
-static bucket_entry sort_real(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u32 which_int, u8 order) {
-  bucket_entry bucket[256];
-  for (int i = 0; i < 256; i++) {
-    bucket[i].head = 0;
-    bucket[i].last = 0;
-  }
-  while (p) {
-    SorterRecord *pNext = p->u.pNext;
-    u8 *payload = SRVAL(p);
-    u32 data_offset = cal_data_offset(p, which_field);
-    u8 *data = &payload[data_offset];
-    i64 i64_val = vdbeRecordDecodeInt(6, data);
-    double double_val = *(double *) &i64_val;
-    u64 u64_val = map_float_u64(double_val);
-    u16 bucket_pos = (u16) ((u64_val >> ((7 - which_int) * 8)) & 255);
-    insert_to_bucket(bucket, bucket_pos, p);
-    p = pNext;
-  }
-
-  for (int i = 0; i < 256; i++) {
-    if (bucket[i].head != bucket[i].last) {
-      if (which_int < 7) {
-        bucket_entry r = sort_real(keyInfo, bucket[i].head, which_field, which_int + 1, order);
-        bucket[i].head = r.head;
-        bucket[i].last = r.last;
-      } else {
-        bucket_entry r = cdisc_sort(keyInfo, bucket[i].head, (which_field + 1));
-        bucket[i].head = r.head;
-        bucket[i].last = r.last;
-      }
-    }
-  }
-
-  return gather_bucket(bucket, 256, order);
-}
-
-bucket_entry sort_int(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u32 which_int, u8 order) {
-
+static bucket_entry sort_numeric(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u32 which_int, u8 order) {
   bucket_entry bucket[256];
   for (int i = 0; i < 256; i++) {
     bucket[i].head = 0;
@@ -1547,18 +1510,25 @@ bucket_entry sort_int(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u32 wh
     u8 *payload = SRVAL(p);
     u32 data_offset = cal_data_offset(p, which_field);
     u8 *data = &payload[data_offset];
-    i64 int_val = vdbeRecordDecodeInt(serial_type, data);
-    u64 shifted_val = shift_i64(int_val);
-    u16 bucket_pos = (u16) ((shifted_val >> ((7 - which_int) * 8)) & 255);
-    insert_to_bucket(bucket, bucket_pos,p);
-    p->u.pNext = 0;
+    u16 bucket_pos;
+    if (serial_type <= 6){
+      i64 int_val = vdbeRecordDecodeInt(serial_type, data);
+      u64 shifted_val = shift_i64(int_val);
+      bucket_pos = (u16) ((shifted_val >> ((7 - which_int) * 8)) & 255);
+    }else{
+      i64 i64_val = vdbeRecordDecodeInt(6, data);
+      double double_val = *(double *) &i64_val;
+      u64 u64_val = map_float_u64(double_val);
+      bucket_pos = (u16) ((u64_val >> ((7 - which_int) * 8)) & 255);
+    }
+    insert_to_bucket(bucket, bucket_pos, p);
     p = pNext;
   }
 
   for (int i = 0; i < 256; i++) {
     if (bucket[i].head != bucket[i].last) {
       if (which_int < 7) {
-        bucket_entry r = sort_int(keyInfo, bucket[i].head, which_field, which_int + 1, order);
+        bucket_entry r = sort_numeric(keyInfo, bucket[i].head, which_field, which_int + 1, order);
         bucket[i].head = r.head;
         bucket[i].last = r.last;
       } else {
@@ -1632,14 +1602,12 @@ bucket_entry cdisc_sort(KeyInfo* keyInfo, SorterRecord *p, u32 which_field) {
   u8 order = keyInfo->aSortOrder[which_field-1];
   u32 serial_type = (u32) ((u8 *) SRVAL(p))[which_field];
   bucket_entry r = {};
-  if (serial_type < 7) {
-    r = sort_int(keyInfo, p, which_field, 0, order);
-  } else if (serial_type == 7) {
-    r = sort_real(keyInfo, p, which_field, 0, order);
+  if (serial_type <= 7) {
+    r = sort_numeric(keyInfo, p, which_field, 0, order);
   } else if (((serial_type % 2) != 0)) {
     r = sort_text(keyInfo,  p, which_field, 0, order);
   } else {
-
+    r = sort_text(keyInfo,  p, which_field, 0, order);
   }
   return r;
 
