@@ -1592,6 +1592,7 @@ bucket_entry sort_text(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u32 w
 }
 
 bucket_entry cdisc_sort(KeyInfo* keyInfo, SorterRecord *p, u32 which_field) {
+  printf("%lu", sizeof(long double));
   if (which_field > keyInfo->nField){
     bucket_entry r = {p, p};
     while(r.last->u.pNext){
@@ -1599,18 +1600,40 @@ bucket_entry cdisc_sort(KeyInfo* keyInfo, SorterRecord *p, u32 which_field) {
     }
     return r;
   }
-  u8 order = keyInfo->aSortOrder[which_field-1];
-  u32 serial_type = (u32) ((u8 *) SRVAL(p))[which_field];
-  bucket_entry r = {};
-  if (serial_type <= 7) {
-    r = sort_numeric(keyInfo, p, which_field, 0, order);
-  } else if (((serial_type % 2) != 0)) {
-    r = sort_text(keyInfo,  p, which_field, 0, order);
-  } else {
-    r = sort_text(keyInfo,  p, which_field, 0, order);
+  bucket_entry bucket[4];
+  for (int i = 0; i < 4; i++) {
+    bucket[i].head = 0;
+    bucket[i].last = 0;
   }
-  return r;
-
+  while (p) {
+    u32 serial_type = (u32) ((u8 *) SRVAL(p))[which_field];
+    SorterRecord *pNext = p->u.pNext;
+    if (serial_type == 0){
+      insert_to_bucket(bucket, 0, p);
+    }else if (serial_type <= 7) {
+      insert_to_bucket(bucket, 1, p);
+    } else if (((serial_type % 2) != 0)) {
+      insert_to_bucket(bucket, 2, p);
+    } else {
+      insert_to_bucket(bucket, 3, p);
+    }
+    p = pNext;
+  }
+  u8 order = keyInfo->aSortOrder[which_field-1];
+  for (int i = 0; i < 4; i++){
+    printf("%d", i);
+    if (bucket[i].head != bucket[i].last) {
+      if (i == 0){
+      }else if (i == 1){
+        bucket[i] = sort_numeric(keyInfo, bucket[i].head, which_field, 0, order);
+      }else if (i == 2){
+        bucket[i] = sort_text(keyInfo,  bucket[i].head, which_field, 0, order);
+      }else if (i == 3){
+        bucket[i] = sort_text(keyInfo,  bucket[i].head, which_field, 0, order);
+      }
+    }
+  }
+  return gather_bucket(bucket, 4, 0);
 }
 
 /*
