@@ -1592,7 +1592,6 @@ bucket_entry cdisc_sort(KeyInfo* keyInfo, SorterRecord *p, u32 which_field) {
   }
   u8 order = keyInfo->aSortOrder[which_field-1];
   for (int i = 0; i < 4; i++){
-    printf("%d", i);
     if (bucket[i].head != bucket[i].last) {
       if (i == 0){
       }else if (i == 1){
