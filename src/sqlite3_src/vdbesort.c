@@ -1394,39 +1394,6 @@ static SorterCompare vdbeSorterGetCompare(VdbeSorter *p){
   return vdbeSorterCompare;
 }
 
-#define ONE_BYTE_INT(x)    ((i8)(x)[0])
-#define TWO_BYTE_INT(x)    (256*(i8)((x)[0])|(x)[1])
-#define THREE_BYTE_INT(x)  (65536*(i8)((x)[0])|((x)[1]<<8)|(x)[2])
-#define FOUR_BYTE_UINT(x)  (((u32)(x)[0]<<24)|((x)[1]<<16)|((x)[2]<<8)|(x)[3])
-#define FOUR_BYTE_INT(x) (16777216*(i8)((x)[0])|((x)[1]<<16)|((x)[2]<<8)|(x)[3])
-
-static i64 vdbeRecordDecodeInt(u32 serial_type, const u8 *aKey) {
-  u32 y;
-  switch (serial_type) {
-    case 0:
-    case 1:
-      return ONE_BYTE_INT(aKey);
-    case 2:
-      return TWO_BYTE_INT(aKey);
-    case 3:
-      return THREE_BYTE_INT(aKey);
-    case 4: {
-      y = FOUR_BYTE_UINT(aKey);
-      return (i64) *(int *) &y;
-    }
-    case 5: {
-      return FOUR_BYTE_UINT(aKey + 2) + (((i64) 1) << 32) * TWO_BYTE_INT(aKey);
-    }
-    case 6: {
-      u64 x = FOUR_BYTE_UINT(aKey);
-      x = (x << 32) | FOUR_BYTE_UINT(aKey + 4);
-      return (i64) *(i64 *) &x;
-    }
-  }
-
-  return (serial_type - 8);
-}
-
 typedef struct bucket_entry{
     SorterRecord* head;
     SorterRecord* last;
@@ -1451,20 +1418,22 @@ static u32 cal_data_offset(SorterRecord *p, u32 which_field) {
   return offset;
 }
 
-SorterRecord* get_tail(SorterRecord* p){
-  while(p->u.pNext){
-    p = p->u.pNext;
-  }
-  return p;
-}
+typedef union float128inbyte{
+    long double f;
+    u8 byte[16];
+} float128inbyte;
 
-static u64 shift_i64(i64 num) {
-  return num + (1ULL << 63);
-}
-
-static u64 map_float_u64(double f) {
-  u64 mask = -((*(u64 *) &f) >> 63) | 0x8000000000000000;
-  return (*(u64 *) &f) ^ mask;
+static float128inbyte map_float_u128(long double f) {
+    float128inbyte map_uint128;
+    map_uint128.f = f;
+    if (map_uint128.byte[9] >> 3) {
+        for (int i = 0; i < 10; i++) {
+            map_uint128.byte[i] ^= 0xFF;
+        }
+    } else {
+        map_uint128.byte[9] ^= 0x80;
+    }
+    return map_uint128;
 }
 
 bucket_entry cdisc_sort(KeyInfo* keyInfo, SorterRecord *p, u32 which_field);
@@ -1511,23 +1480,26 @@ static bucket_entry sort_numeric(KeyInfo* keyInfo, SorterRecord *p, u32 which_fi
     u32 data_offset = cal_data_offset(p, which_field);
     u8 *data = &payload[data_offset];
     u16 bucket_pos;
+    long double double_val;
     if (serial_type <= 6){
-      i64 int_val = vdbeRecordDecodeInt(serial_type, data);
-      u64 shifted_val = shift_i64(int_val);
-      bucket_pos = (u16) ((shifted_val >> ((7 - which_int) * 8)) & 255);
+      Mem pMem;
+      sqlite3VdbeSerialGet(data, serial_type, &pMem);
+      i64 int_val = pMem.u.i;
+      double_val = (long double) int_val;
     }else{
-      i64 i64_val = vdbeRecordDecodeInt(6, data);
-      double double_val = *(double *) &i64_val;
-      u64 u64_val = map_float_u64(double_val);
-      bucket_pos = (u16) ((u64_val >> ((7 - which_int) * 8)) & 255);
+      Mem pMem;
+      sqlite3VdbeSerialGet(data, serial_type, &pMem);
+      double_val = pMem.u.r;
     }
+    float128inbyte u128_val = map_float_u128(double_val);
+    bucket_pos = u128_val.byte[9 - which_int];
     insert_to_bucket(bucket, bucket_pos, p);
     p = pNext;
   }
 
   for (int i = 0; i < 256; i++) {
     if (bucket[i].head != bucket[i].last) {
-      if (which_int < 7) {
+      if (which_int < 9) {
         bucket_entry r = sort_numeric(keyInfo, bucket[i].head, which_field, which_int + 1, order);
         bucket[i].head = r.head;
         bucket[i].last = r.last;
@@ -1592,7 +1564,6 @@ bucket_entry sort_text(KeyInfo* keyInfo, SorterRecord *p, u32 which_field, u32 w
 }
 
 bucket_entry cdisc_sort(KeyInfo* keyInfo, SorterRecord *p, u32 which_field) {
-  printf("%lu", sizeof(long double));
   if (which_field > keyInfo->nField){
     bucket_entry r = {p, p};
     while(r.last->u.pNext){

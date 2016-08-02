@@ -6,7 +6,6 @@
 #include "cputime.c"
 
 
-
 unsigned int randr(unsigned int min, unsigned int max) {
     double scaled = (double) rand() / RAND_MAX;
 
@@ -33,7 +32,6 @@ void measure_query_time(sqlite3* db, int i, char* field){
     diff = getCPUTime() - start;
     printf("%d\t%lf\n", i, diff);
 }
-
 int main(int argc, char *argv[]) {
     setbuf(stdout, NULL);
     sqlite3 *db;
