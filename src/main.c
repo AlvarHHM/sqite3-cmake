@@ -6,7 +6,6 @@
 #include "cputime.c"
 
 
-
 unsigned int randr(unsigned int min, unsigned int max) {
     double scaled = (double) rand() / RAND_MAX;
 
@@ -33,7 +32,6 @@ void measure_query_time(sqlite3* db, int i, char* field){
     diff = getCPUTime() - start;
     printf("%d\t%lf\n", i, diff);
 }
-
 int main(int argc, char *argv[]) {
     setbuf(stdout, NULL);
     sqlite3 *db;
@@ -45,9 +43,9 @@ int main(int argc, char *argv[]) {
     sqlite3_exec(db, "PRAGMA automatic_index=false", NULL, NULL, NULL);
 
     sqlite3_exec(db, "drop table if exists fun;", NULL, NULL, NULL);
-    sqlite3_exec(db, "create table fun(id num, randstr text, randint num, randreal real);", NULL, NULL, NULL);
+    sqlite3_exec(db, "create table fun(id num, randstr text, randint num, randreal real, randnum num);", NULL, NULL, NULL);
     srand(time(NULL));
-    char sql[] = "insert into fun values(?1,?2,?3,?4)";
+    char sql[] = "insert into fun values(?1,?2,?3,?4,?5)";
     sqlite3_stmt* stmt;
     sqlite3_prepare_v2(db, sql, strlen(sql), &stmt, NULL);
     sqlite3_exec(db, "BEGIN TRANSACTION;", NULL, NULL, NULL);
@@ -56,6 +54,7 @@ int main(int argc, char *argv[]) {
         long long int randint = ((long long) rand() << 32) | rand();
         randint = (rand() % 2)? randint: -randint;
         double randreal = -1. + rand() / (RAND_MAX / 2.);
+
         int len = randr(1, 11);
         char randstr[len];
         rand_str(randstr, len);
@@ -63,6 +62,11 @@ int main(int argc, char *argv[]) {
         sqlite3_bind_text(stmt, 2, randstr, len, SQLITE_STATIC);
         sqlite3_bind_int64(stmt, 3, randint);
         sqlite3_bind_double(stmt, 4, randreal);
+        if (rand() & 1){
+            sqlite3_bind_int64(stmt, 5, randint);
+        }else{
+            sqlite3_bind_double(stmt, 5, randreal);
+        }
         sqlite3_step(stmt);
         if (argc < 4 || i > atoi(argv[3])){
             if (i % atoi(argv[1]) == 0){
