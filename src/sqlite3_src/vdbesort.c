@@ -1394,62 +1394,78 @@ static SorterCompare vdbeSorterGetCompare(VdbeSorter *p){
   return vdbeSorterCompare;
 }
 
+void merge_split(SorterRecord *p, SorterRecord **a, SorterRecord **b) {
+    SorterRecord *fast;
+    SorterRecord *slow;
+    if (p == NULL || p->u.pNext == NULL) {
+        /* length < 2 cases */
+        *a = p;
+        *b = NULL;
+    }
+    else {
+        slow = p;
+        fast = p->u.pNext;
+
+        /* Advance 'fast' two nodes, and advance 'slow' one node */
+        while (fast != NULL) {
+            fast = fast->u.pNext;
+            if (fast != NULL) {
+                slow = slow->u.pNext;
+                fast = fast->u.pNext;
+            }
+        }
+
+        /* 'slow' is before the midpoint in the list, so split it in two
+          at that point. */
+        *a = p;
+        *b = slow->u.pNext;
+        slow->u.pNext = NULL;
+    }
+}
+
+SorterRecord* merge_sort(SortSubtask* pTask, SorterRecord* p){
+    if (p->u.pNext == NULL){
+        return p;
+    }
+    SorterRecord* a;
+    SorterRecord* b;
+    merge_split(p, &a, &b);
+    a = merge_sort(pTask, a);
+    b = merge_sort(pTask, b);
+    return vdbeSorterMerge(pTask, a, b);
+}
+
 /*
 ** Sort the linked list of records headed at pTask->pList. Return 
 ** SQLITE_OK if successful, or an SQLite error code (i.e. SQLITE_NOMEM) if 
 ** an error occurs.
 */
 static int vdbeSorterSort(SortSubtask *pTask, SorterList *pList){
-  int i;
-  SorterRecord **aSlot;
-  SorterRecord *p;
-  int rc;
+    SorterRecord *p;
+    KeyInfo* keyInfo = pTask->pSorter->pKeyInfo;
+    int rc = vdbeSortAllocUnpacked(pTask);
+    if( rc!=SQLITE_OK ) return rc;
 
-  rc = vdbeSortAllocUnpacked(pTask);
-  if( rc!=SQLITE_OK ) return rc;
-
-  p = pList->pList;
-  pTask->xCompare = vdbeSorterGetCompare(pTask->pSorter);
-
-  aSlot = (SorterRecord **)sqlite3MallocZero(64 * sizeof(SorterRecord *));
-  if( !aSlot ){
-    return SQLITE_NOMEM_BKPT;
-  }
-
-  while( p ){
-    SorterRecord *pNext;
-    if( pList->aMemory ){
-      if( (u8*)p==pList->aMemory ){
-        pNext = 0;
-      }else{
-        assert( p->u.iNext<sqlite3MallocSize(pList->aMemory) );
-        pNext = (SorterRecord*)&pList->aMemory[p->u.iNext];
-      }
-    }else{
-      pNext = p->u.pNext;
+    p = pList->pList;
+    pTask->xCompare = vdbeSorterGetCompare(pTask->pSorter);
+    while( p ){
+        SorterRecord *pNext;
+        if( pList->aMemory ){
+            if( (u8*)p==pList->aMemory ){
+                pNext = 0;
+            }else{
+                pNext = (SorterRecord*)&pList->aMemory[p->u.iNext];
+            }
+        }else{
+            pNext = p->u.pNext;
+        }
+        p->u.pNext = pNext;
+        p = pNext;
     }
 
-    p->u.pNext = 0;
-    for(i=0; aSlot[i]; i++){
-      p = vdbeSorterMerge(pTask, p, aSlot[i]);
-      aSlot[i] = 0;
-    }
-    aSlot[i] = p;
-    p = pNext;
-  }
-
-  p = 0;
-  for(i=0; i<64; i++){
-    if( aSlot[i]==0 ) continue;
-    p = p ? vdbeSorterMerge(pTask, p, aSlot[i]) : aSlot[i];
-  }
-  pList->pList = p;
-
-  sqlite3_free(aSlot);
-  assert( pTask->pUnpacked->errCode==SQLITE_OK
-          || pTask->pUnpacked->errCode==SQLITE_NOMEM
-  );
-  return pTask->pUnpacked->errCode;
+    p = pList->pList;
+    pList->pList = merge_sort(pTask, p);
+    return SQLITE_OK;
 }
 
 /*
