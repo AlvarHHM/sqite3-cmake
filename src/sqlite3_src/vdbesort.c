@@ -1425,7 +1425,6 @@ static u128 cdisc_map_float(long double f) {
   memcpy(&map_uint128, &f, 16);
   u128 flip_sign = 0x80;
   u128 mask = (-((map_uint128 >> 79) & 1) >> 48) | ((flip_sign << 72));
-  u128 reult = map_uint128 ^ mask;
   return map_uint128 ^ mask;
 }
 
