@@ -1418,22 +1418,15 @@ static u32 cdisc_cal_data_offset(SorterRecord *p, u32 which_field) {
   return offset;
 }
 
-typedef union float128inbyte{
-    long double f;
-    u8 byte[16];
-} float128inbyte;
+typedef __uint128_t u128;
 
-static float128inbyte cdisc_map_float(long double f) {
-    float128inbyte map_uint128;
-    map_uint128.f = f;
-    if (map_uint128.byte[9] >> 3) {
-        for (int i = 0; i < 10; i++) {
-            map_uint128.byte[i] ^= 0xFF;
-        }
-    } else {
-        map_uint128.byte[9] ^= 0x80;
-    }
-    return map_uint128;
+static u128 cdisc_map_float(long double f) {
+  u128 map_uint128;
+  memcpy(&map_uint128, &f, 16);
+  u128 flip_sign = 0x80;
+  u128 mask = (-((map_uint128 >> 79) & 1) >> 48) | ((flip_sign << 72));
+  u128 reult = map_uint128 ^ mask;
+  return map_uint128 ^ mask;
 }
 
 bucket_entry cdisc_sort(KeyInfo* keyInfo, SorterRecord *p, u32 which_field);
@@ -1481,19 +1474,19 @@ static bucket_entry cdisc_sort_numeric(KeyInfo *keyInfo, SorterRecord *p, u32 wh
     u8 *data = &payload[data_offset];
     u16 bucket_pos;
     long double double_val;
-    if (serial_type <= 6){
+    if (serial_type <= 6) {
       Mem pMem;
       sqlite3VdbeSerialGet(data, serial_type, &pMem);
       i64 int_val = pMem.u.i;
       double_val = (long double) int_val;
-    }else{
+    } else {
       Mem pMem;
       sqlite3VdbeSerialGet(data, serial_type, &pMem);
       double_val = pMem.u.r;
     }
-    float128inbyte u128_val = cdisc_map_float(double_val);
-    bucket_pos = u128_val.byte[9 - which_int];
-      cdisc_insert_to_bucket(bucket, bucket_pos, p);
+    u128 u128_val = cdisc_map_float(double_val);
+    bucket_pos = ((u8*)&u128_val)[9-which_int];
+    cdisc_insert_to_bucket(bucket, bucket_pos, p);
     p = pNext;
   }
 
