@@ -1419,21 +1419,20 @@ static u32 cdisc_cal_data_offset(SorterRecord *p, u32 which_field) {
 }
 
 typedef union float128inbyte{
-    long double f;
     u8 byte[16];
 } float128inbyte;
 
 static float128inbyte cdisc_map_float(long double f) {
-    float128inbyte map_uint128;
-    map_uint128.f = f;
-    if (map_uint128.byte[9] >> 3) {
-        for (int i = 0; i < 10; i++) {
-            map_uint128.byte[i] ^= 0xFF;
-        }
-    } else {
-        map_uint128.byte[9] ^= 0x80;
+  float128inbyte map_uint128;
+  memcpy(&map_uint128, &f, sizeof(f));
+  if (map_uint128.byte[9] >> 3) {
+    for (int i = 0; i < 10; i++) {
+      map_uint128.byte[i] ^= 0xFF;
     }
-    return map_uint128;
+  } else {
+    map_uint128.byte[9] ^= 0x80;
+  }
+  return map_uint128;
 }
 
 bucket_entry cdisc_sort(KeyInfo* keyInfo, SorterRecord *p, u32 which_field);
