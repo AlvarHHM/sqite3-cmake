@@ -55,7 +55,7 @@ int main(int argc, char *argv[]) {
         randint = (rand() % 2)? randint: -randint;
         double randreal = -1. + rand() / (RAND_MAX / 2.);
 
-        int len = randr(1, 11);
+        int len = randr(1, 1000);
         char randstr[len];
         rand_str(randstr, len);
         sqlite3_bind_int(stmt, 1, i);
