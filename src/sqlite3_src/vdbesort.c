@@ -1460,8 +1460,8 @@ void cdisc_insert_to_bucket(bucket_entry *bucket, u32 bucket_pos, SorterRecord *
 }
 
 static bucket_entry cdisc_sort_numeric(KeyInfo *keyInfo, SorterRecord *p, u32 which_field, u32 which_int, u8 order) {
-  bucket_entry bucket[256];
-  for (int i = 0; i < 256; i++) {
+  bucket_entry bucket[65536];
+  for (int i = 0; i < 65536; i++) {
     bucket[i].head = 0;
     bucket[i].last = 0;
   }
@@ -1484,15 +1484,15 @@ static bucket_entry cdisc_sort_numeric(KeyInfo *keyInfo, SorterRecord *p, u32 wh
       double_val = pMem.u.r;
     }
     u128 u128_val = cdisc_map_float(double_val);
-    bucket_pos = ((u8*)&u128_val)[9-which_int];
+    bucket_pos = (((u8*)&u128_val)[9-which_int] << 8) | ((u8*)&u128_val)[9-which_int-1];
     cdisc_insert_to_bucket(bucket, bucket_pos, p);
     p = pNext;
   }
 
-  for (int i = 0; i < 256; i++) {
+  for (int i = 0; i < 65536; i++) {
     if (bucket[i].head != bucket[i].last) {
       if (which_int < 9) {
-        bucket_entry r = cdisc_sort_numeric(keyInfo, bucket[i].head, which_field, which_int + 1, order);
+        bucket_entry r = cdisc_sort_numeric(keyInfo, bucket[i].head, which_field, which_int + 2, order);
         bucket[i].head = r.head;
         bucket[i].last = r.last;
       } else {
@@ -1503,7 +1503,7 @@ static bucket_entry cdisc_sort_numeric(KeyInfo *keyInfo, SorterRecord *p, u32 wh
     }
   }
 
-  return cdisc_gather_bucket(bucket, 256, order);
+  return cdisc_gather_bucket(bucket, 65536, order);
 }
 
 static u8 cdisc_empty_except_zero(bucket_entry *bucket){
